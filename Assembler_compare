@@ -1,0 +1,45 @@
+format mz
+org 100h
+
+jmp start
+
+string db 'Hello!', 13, 10, '$'
+length db 6
+s_entchar db 'Enter char (Press enter to exit): $'
+s_found db '-found!', 13, 10, '$'
+s_nfound db '-not found!', 13, 10, '$'
+
+start:
+mov ah, 09h
+mov dx, string
+int 21h
+
+main:
+mov dx, s_entchar
+int 21h
+mov ah, 01h
+int 21h
+cmp al, 0Dh
+je exit
+mov bx, string-1
+movzx cx, [length]
+
+search:
+inc bx
+cmp al, [bx]
+loopne search
+je found
+
+mov dx, s_nfound
+print_result:
+mov ah, 09h
+int 21h
+jmp main
+
+found:
+mov dx, s_found
+jmp print_result
+
+exit:
+mov ax, 4c00h
+int 21h
