@@ -1,0 +1,88 @@
+#define _CRT_SECURE_NO_WARNINGS
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+
+//кол-во возможных путей из k в m
+//поиск в глубину
+void dfs(int** graph, int* check, int* paths, int n, int k, int m) {
+	//пришли в конечную вершину
+	if (k == m)
+		(*paths)++;
+	else {
+		check[k] = 1; //пометили
+		for (int i = 0; i < n; i++) {
+			//есть путь в непосещенную вершину
+			if (graph[k][i] && !check[i]) {
+				dfs(graph, check, paths, n, i, m);
+			}
+		}
+		check[k] = 0; //сняли метку
+	}
+}
+
+//получение графа из файла
+int** loadGraph(const char* file, int* n) {
+	FILE* f = fopen("Graph.txt", "r");
+	int** res = NULL;
+	if (f) {
+		//читаем размер
+		char buf[25];
+		fgets(buf, 25, f);
+		buf[strlen(buf) - 1] = '\0';
+		*n = atoi(buf); //в число
+		res = (int**)malloc(sizeof(int*) * (*n)); //память под строки
+		for (int i = 0; i < *n; i++) {
+			res[i] = (int*)malloc(sizeof(int) * (*n)); //под столбцы
+			for (int j = 0; j < *n; j++) {
+				fscanf(f, "%d", &res[i][j]);
+			}
+		}
+		fclose(f);
+	}
+	else {
+		printf("can't open file\n");
+	}
+	return res;
+}
+
+//основная функция
+int main() {
+	//читаем неориентированный граф из файла
+	int n = 0;
+	int** graph = loadGraph("test.txt", &n);
+	printf("current graph:\n");
+	for (int i = 0; i < n; i++) {
+		for (int j = 0; j < n; j++) {
+			printf("%4d", graph[i][j]);
+		}
+		printf("\n");
+	}
+
+	//считаем кол-во путей
+	if (graph) {
+		int* paths = (int*)malloc(sizeof(int));
+		int* check = (int*)malloc(sizeof(int) * n);
+		for (int i = 0; i < n; i++) {
+			check[i] = 0;
+		}
+		*paths = 0;
+		int k, m;
+		printf("\ninputs k and m = ");
+		scanf_s("%d", &k);
+		scanf_s("%d", &m);
+		dfs(graph, check, paths, n, k - 1, m - 1);
+		printf("\nsize ways from k(%d) to m(%d) = %d\n", k, m, *paths);
+		free(paths);
+		free(check);
+	}
+
+	//возврат памяти
+	if (graph) {
+		for (int i = 0; i < n; i++) {
+			free(graph[i]);
+		}
+		free(graph);
+	}
+	return 0;
+}
