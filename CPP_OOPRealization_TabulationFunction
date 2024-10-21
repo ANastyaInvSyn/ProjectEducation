@@ -1,0 +1,271 @@
+«Main.cpp»
+#include <iostream>
+#include "Tabulation_Function.h"
+#include "ValueControl.h"
+using namespace std;
+
+int main()
+{
+	ValueControl params;
+	params.Read();
+
+	tabulationFunction func(params.GetParameters());
+	func.tabulateAndOutputResults("test_file.txt");
+	
+	getchar();
+	getchar();
+	return 0;
+}
+
+«Params.h»
+#pragma once
+
+struct Params
+{
+	double Left;
+	double Right;
+	double Step;
+};
+
+«ParamsHolder.h»
+#pragma once
+#include "Params.h"
+class ParamsHolder
+{
+public:
+	double GetLeftValue()
+	{
+		return m_leftValue;
+	}
+	double GetRightValue()
+	{
+		return m_rightValue;
+	}
+	double GetStep()
+	{
+		return m_step;
+	}
+
+	Params GetParameters()
+	{
+		Params params;
+		params.Left = m_leftValue;
+		params.Right = m_rightValue;
+		params.Step = m_step;
+		return params;
+	}
+
+protected:
+	void InitParams(double leftValue, double rightValue, double steps)
+	{
+		m_leftValue = leftValue;
+		m_rightValue = rightValue;
+		m_step = steps;
+	}
+
+private:
+	double m_leftValue = 0;
+	double m_rightValue = 0;
+	double m_step = 0;
+};
+
+«ValueControl.h»
+#pragma once
+#include "ParamsHolder.h"
+
+class ValueControl : public ParamsHolder
+{
+private:
+	void ClearBuffer(char* buffer, int size);
+	bool GetParameterFromString(char* buffer, int size, double& param);
+	bool CorrectAndChectParameter(char* data, int lenght);
+	void ReadInterval(double& left, double& right);
+	double ReadStep();
+	double ReadParam();
+public:
+	void Read();
+};
+
+«ValueControl.cpp»
+#include <iostream>
+
+#include "ValueControl.h"
+
+using namespace std;
+
+void ValueControl::ClearBuffer(char* buffer, int size)
+{
+	memset(buffer, 0, size);
+}
+
+double ValueControl::ReadParam()
+{
+	static const int bufferSize = 255;
+	char text[bufferSize];
+	ClearBuffer(text, bufferSize);
+	double res;
+	do
+	{
+		cin >> text;
+		if (GetParameterFromString(text, bufferSize, res))
+		{
+			return res;
+		}
+
+		cout << "Parameter error! Enter value like: 123.5 or 123,5" << endl;
+	} while (true);
+}
+
+void ValueControl::Read()
+{
+	double step = ReadStep();
+	double left, right;
+	ReadInterval(left, right);
+	InitParams(left, right, step);
+}
+
+bool ValueControl::GetParameterFromString(char* buffer, int size, double& param)
+{
+	if (!CorrectAndChectParameter(buffer, size))
+	{
+		return false;
+	}
+
+	param = atof(buffer);
+	return true;
+}
+
+bool ValueControl::CorrectAndChectParameter(char* data, int lenght)
+{
+	for (int i = 0; i < lenght; ++i)
+	{
+		if (data[i] == 0)
+		{
+			if (i == 0)
+			{
+				return false;
+			}
+			else
+			{
+				return true;
+			}
+		}
+
+		if ((data[i] < '0' || data[i] > '9') && data[i] != '.' && data[i] != ',' && data[i] != '-')
+		{
+			return false;
+		}
+
+		if (data[i] == ',')
+		{
+			data[i] = '.';
+		}
+	}
+
+	return true;
+}
+
+double ValueControl::ReadStep()
+{
+	double res;
+	do
+	{
+		cout << "Specify the step: ";
+		res = ReadParam();
+
+		if (res <= 0)
+		{
+			cout << "Error step param! Step should be great then zero!" << endl;
+		}
+		else
+		{
+			return res;
+		}
+
+	} while (true);
+}
+
+void ValueControl::ReadInterval(double& left, double& right)
+{
+	do
+	{
+		cout << endl << "Specify the tabulation interval of the function: " << endl << "From: ";
+		left = ReadParam();
+		cout << endl << "To: ";
+		right = ReadParam();
+		cout << endl;
+
+		if (left >= right)
+		{
+			cout << "Wrong interval! Left value should be less right value.";
+		}
+		else
+		{
+			return;
+		}
+	} while (true);
+}
+
+«Tabulator.h»
+#pragma once
+#include <iostream>
+
+#include "ParamsHolder.h"
+#include "Params.h"
+
+using namespace std;
+
+class Tabulator : public ParamsHolder
+{
+public:
+	Tabulator(Params params)
+	{
+		InitParams(params.Left, params.Right, params.Step);
+	}
+	virtual void tabulateAndOutputResults(std::string fname) = 0;
+};
+
+«Tabulation_Function.h»
+#pragma once
+#include <iostream>;
+
+#include "Tabulator.h"
+#include "Params.h"
+using namespace std;
+
+class tabulationFunction : public Tabulator
+{
+public:
+	tabulationFunction(Params params) : Tabulator(params)
+	{}
+	void tabulateAndOutputResults(std::string fname);
+};
+
+«Tabulation_Function.cpp»
+#include <fstream>
+#include <iostream>
+
+#include "Tabulation_Function.h"
+#include "Tabulator.h"
+
+void tabulationFunction::tabulateAndOutputResults(std::string fname)
+{
+	cout << "Write data to:" << fname << endl;
+	ofstream outFile;
+	outFile.open(fname);
+
+	for (double x = GetLeftValue(); x <=
+		GetRightValue(); x += GetStep())
+	{
+		if ((2 * log(x * x) - x) >= 0)
+		{
+			float y = sqrt(2 * log(x * x) - x);
+			outFile << "x = " << x << "\t" << "y = " << y << endl;
+		}
+		else
+		{
+			outFile << "x = " << x << " - the function does not exist" << endl;
+		}
+	}
+	outFile.close();
+}
