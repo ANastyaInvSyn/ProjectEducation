@@ -1,0 +1,426 @@
+format mz
+org 100h
+include 'C:\Users\User\Desktop\macross.txt'     ;подключение файла макроса
+
+entry code_seg: start           ;переход к началу выполнения кода
+
+segment data_seg                ;объявление сегмента данных
+
+        functionStr db 'Function: y = sqrt(2*ln(x*x)-x)$', 10, 13    ;строка вывода функции
+        startStr db 'Input start: $'       		;строка запроса начального значения интервала
+        stopStr db 'Input stop: $'         		;строка запроса конечного значения интервала
+        stepStr db 'Input step: $'         		;строка запроса значения шага
+        errorStep db 'Invalid step value$', 10, 13 			;ошибка значения шага
+        errorInterval db 'Invalid interval values$', 10, 13                    ;ошибка значений интервала
+        fileName db 'Output.txt', 0                                                          ;имя файла
+        strVal db 'X:          Y:', 10
+        breakStr db 'The function does not exist$'
+        spacebar db '      '
+        endline db 10, 13, '$'
+
+        buffer rb 22             ;буфер для хранения строки
+        handle rw 1             ;хранение файлового дескриптора
+        lenBuffer db ?         ;длина буфера
+        xStart dq ?               ;начальное значение интервала
+        xStop dq ?               ;конечное значение интервала
+        xStep dq ?               ;значение шага
+        result dq ?              ;значение результата
+        wholeDigit db 0         ;значение целой части числа
+        fractionalDigit db 0    ;значение дробной части числа
+
+segment code_seg              ;объявление сегмента кода
+start:                                      ;точка начала выполнения кода
+        mov ax,data_seg         ;\ объявление сегмента данных в сегменте кода
+        mov ds,ax                      ;/
+
+        printStr functionStr    ;вывод функции на экран
+        printStr endline          ;новая строка
+        jmp inputStart            ;переход на метку ввода начального значения
+
+inputStart:                          ;метка ввода начального значения
+        printStr startStr         ;вывод строки запроса
+        scanStr buffer, 20      ;считывание строки  в переменную buffer
+        mov byte[lenBuffer], al   	;сохранение длины строки
+        clearRegistr ax, dx            ;очищение регистров
+        mov di, xStart                    ;помещаем в di адрес
+        call strToNum                   ;конвертация xStart в вещественное число
+        clearBuffer buffer, 22     ;очистка буфера
+        clearVar  lenBuffer, wholeDigit, fractionalDigit  	;очистка переменных
+        printStr endline        ;перевод строки
+        jmp inputStop           ;переход к вводу конца промежутка
+
+inputStop:                      ;метка ввода конца промежутка
+        printStr stopStr        ;вывод строки запроса конечного значения
+        scanStr buffer, 20      ;считывание строки в buffer
+        mov byte[lenBuffer], al    ;сохранение строки
+        clearRegistr ax, dx        ;очищение регистров
+        mov di, xStop              ;помещение адреса в di
+        call strToNum    ;конвертация xStop из строки в вещественное число
+        clearBuffer buffer, 22      ;очищение буфера
+        clearVar  lenBuffer, wholeDigit, fractionalDigit    ;очищение переменных
+        printStr endline            ;перевод строки
+        
+;проверка правильного введения значений интервала (xStart < xStop)
+        finit                       ;инициализация мат сопроцессора
+        fld qword[xStart]           ;загрузка значения xStart
+        fld qword[xStop]            ;загрузка значения xStop
+        fcomp                       ;сравнение st0 и st1 с выталкиванием st0
+        fstsw ax                    ;загружаем в ах значение регистра состояния
+        ffree st0                   ;очищаем st0
+        sahf                        ;загрузка регистров флагов
+        jbe inputError.errorInterval   	;если xStart > xStop, переход на метку,
+                                                                       ;выводящую ошибку и запрашивающую
+                                                                       ;значения заново
+
+inputStep:                           ;метка ввода шага
+        printStr  stepStr            ;вывод строки запроса шага
+        scanStr buffer, 20           ;считывание строки в буфер
+        mov byte[lenBuffer], al      ;сохранение длины строки
+        clearRegistr ax, dx          ;очищение регистров
+        mov di, xStep                ;помещение адреса в di
+        call strToNum                ;конвертация xStеp из строки в вещественное число
+        clearBuffer buffer, 22    ;очищение буфера
+        clearVar lenBuffer, wholeDigit, fractionalDigit       ;очищение переменных
+        ;проверка правильного введения значения шага (xStep > 0)
+        finit                ;инициализация мат сопроцессора
+        fldz                 ;загрузка нуля в st0
+        fld qword[xStep]     ;загрузка значения шага
+        fcomp                ;сравнение st0 и st1 с выталкиваним st0
+        fstsw ax             ;загружаем в ах значение регистра состояния
+        ffree st0            ;очищаем st0
+        sahf                 ;загрузка регистров флагов
+        jbe inputError.errorStep      ;если xStep>=0, переход на метку,
+                                                         ;выводящую ошибку и запрашивающую
+                                                         ;значение снова
+
+;создание файла
+        mov ah, 3ch                ;функция создания файла
+        mov dx, fileName           ;в dx помещаем имя файла
+        clearRegistr cx            ;очищение регистра сх
+        int 21h                    ;прерывание
+        mov word[handle], ax       ;сохраняем дескриптор файла
+
+        mov al, 15                 ;помещаем в al количество выводимых символов строке
+        mov byte[lenBuffer], al    	;помещаем значение в переменную
+        foutputStr strVal, lenBuffer, handle     ;макрос вывода в файл
+        clearVar  lenBuffer        ;очищение переменной
+
+tabulation:                           ;метка табуляции
+        tabulationOfFunc xStart, result     ;вызов макроса табуляции
+        ;проверка, является ли посчитанное значение валидным
+        fldz
+        fld qword[result]
+        fcomp
+        fstsw ax
+        sahf
+        jb .notValid 	;если значение не валидно, тогда переход на метку,
+                                          ;выводящую значение Х и сообщении о том, что функция не существует
+
+        call outputBothVal              ;вызов макроса вывода значений
+        jmp .nextStep                     ;переход на метку перехода к следующему значению Х
+.notValid:
+        call outputBreak
+.nextStep:
+        finit                          ;инициализация мат сопроцессора
+        fld qword[xStart]              ;загрузка начального значения
+        fadd qword[xStep]              ;прибавление шага
+        fst qword[xStart]              ;сохранение значения
+        fcomp qword[xStop]             ;сравнение значений границ
+        fstsw ax
+        sahf
+        jbe tabulation                 ;переход к началу, если левая
+                                                  ;граница не сравнялась с правой
+
+        mov ah, 3eh                    ;функция закрытия файла
+        mov bx, [handle]               ;помещение дескриптора файла
+        int 21h                        ;прерывание
+        endProg                        ;завершение программы
+
+
+inputError:                            ;метка обработки ошибок
+        mov al, byte[si]               ;загружаем значение байта вl
+        inc si                         ;переход к следующему байту
+        cmp al, '.'                    ;сравниваем с точкой
+        je moreNum                      ;переход пометке, если символ - точка
+        cmp al, ','                    ;сравниваем с запятой
+        je moreNum                      ;если символ - запятая, то переходим по метке
+.errorStep:                            ;локальная меткао ошибки ввода шага
+        printStr endline
+        printStr errorStep
+        printStr endline
+        jmp inputStep
+.errorInterval:                        ;локальная метка ошибки ввода интервала
+        printStr errorInterval
+        printStr endline
+        jmp inputStart
+
+countNumber:                           ;метка вычисления количества символов целой и
+                                                     ;дробной частей
+        push si                        ;сохраням адрес строки
+        push bx                        ;сохраняем знак числа
+        mov bl, 0                      ;оставляем модуль числа
+@@:
+        lodsb                          ; в al сохраняем один байт и прибавляем 1 к si
+
+        cmp al, '.'                    ;сравниваем с точкой
+        je @f                          ;если значение - точка, переходим на метку
+        cmp al, ','                    ;сравниваем с запятой
+        je @f                          ;если значение - запятая, переходим на метку
+        inc bl                         ;увеличиваем bl
+        cmp bl,byte[lenBuffer]         ;сравниваем с длиной
+        jne @r                         ;если не равны
+        jmp .onlyIntegPart             ;если равны
+@@:                                    ;для вещественного числа
+        mov byte[wholeDigit], bl       ;сохраняем количество цифр целой части
+        mov bl, byte[lenBuffer]        ;сохраняем значение в bl
+        sub bl, byte[wholeDigit]       ;вычитаем из общей длины, число цифр целой части
+        dec bl                         ;вычитаем символ запятой
+
+        mov byte[fractionalDigit], bl  	;сохраняем количество цифр дробной части
+        jmp @f
+
+.onlyIntegPart:                        ;для целых чисел
+        mov byte[wholeDigit], bl       ;сохраняем количество целой части
+        mov byte[fractionalDigit], 0   ;обнуляем количество цифр дробной части
+@@:
+        mov si, buffer                 ;копируем адрес буфера
+        add si, 2
+        movzx cx, byte[lenBuffer]      ;помещаем в счетчик количество символов в строке
+        cld                            ;очистка флага направления
+@@:
+        lodsb                          ;загрузка байта в si
+        cmp al, '.'                    ;сравнение значения с точкой
+        je .floatNum                   ;если равно
+        cmp al, ','                    ;сравнение с запятой
+        je .floatNum                   ;если равно
+        loop @r                        ;повторяем сх раз
+        jmp .unFloatNum                ;если нет точки/запятой
+.floatNum:
+        dec byte[lenBuffer]            ;вычитаем из длины 1
+.unFloatNum:
+        pop bx                         ;достаем si
+        pop si
+        ret
+
+
+strToNum:                              ;метка перевода строчки в число
+begin:
+        pusha                          ;сохраняем все регистры
+        finit                          ;инициализация мат сопроцессора
+        cmp byte[si], '-'              ;сравнение с минусом
+
+        jne @f                          ;если нет
+        inc si                          ;иначе увеличиваем si
+        dec byte[lenBuffer]             ;уменьшаем длину строки
+        clearRegistr bl                 ;очищаем регистр
+        mov bl, 1
+@@:
+        call countNumber
+
+        movzx cx, byte[lenBuffer]        ;помещаем в счетчик количество символов
+        push 10                          ;сохраняем в сетек 10
+        push 0                           ;сохраняем в стек 0
+        mov bp, sp                       ;сохраняем адрес вершины стека
+        fldz                             ;загружаем 0
+.repeat:
+        cmp byte[si], '9'                ;сравниваем с 9
+        ja inputError                    ;если больше, переход
+        cmp byte[si], '0'                ;сравниваем с 0
+        jb inputError                    ;если меньше, переход
+        cmp cl, byte[lenBuffer]          ;сравнение cl с длиной строки
+        je .oneNum                       ;если равно
+        jmp moreNum
+.oneNum:
+        clearRegistr eax                 ;очистить регистр
+        movzx ax, byte[si]               ;копируем значение из одного байта
+        sub al, 30h                      ;переводим из аски
+        mov word[bp], ax                 ;помещаем число в стек вместо нуля
+        fiadd word[bp]                   ;складываем с нулем
+        inc si                           ;переходим к следующему байту
+        dec cx                           ;уменьшаем счетчик
+        cmp byte[lenBuffer], 1           ;сравниваем длину с 1
+        je moreNum.endRepeat              ;если равно
+        jmp begin.repeat
+
+moreNum:                                 ;те же действия, если в строке более одного разряда
+        fimul word[bp+2]
+        movzx ax, byte[si]
+        sub al, 30h
+        mov word[bp], ax
+        fiadd word[bp]
+
+        dec cx
+        inc si
+        cmp cx, 0
+        jne begin.repeat
+
+.endRepeat:
+        mov cl, byte[fractionalDigit] 	 ;загружаем количество символов дробной части
+
+        cmp cl, 0                      ;сравниваем с нулем
+        je .end                        ;если ноль, то пропускаем
+@@:
+        fidiv word[bp+2]               ;иначе делим
+        loop @r                        ;повторяется сх раз
+.end:
+        cmp bl, 1                      ;проверяем знак числа
+        jne @f                         ;если отрицательное
+        fchs                           ;меняем знак
+@@:
+        fstp qword[di]                 ;сохраняем в переменную результат
+        pop ax                         ;достаем промежуточный результат
+        pop ax                         ;достаем 10
+        popa                           ;достаем остальные регистры
+        ret
+
+numToStr:
+        pusha                ;сохраняем регистры
+        push 10              ;помещаем 10 в стек
+        push 0               ;помещаем  в стек
+        mov bp, sp           ;копируем адрес вершины стека
+
+        finit                ;инициализируем мат сопроцессор
+        fld qword[eax]       ;загружаем значение в st0
+        fldz                 ;загружаем 0
+        fcomp                ;сравниваем
+        fstsw ax
+        sahf
+        jbe @f                ;если положительное, переход
+
+        fchs                  ;иначе меняем знак
+        mov byte[si], '-'     ;заносим в строку минус
+        inc si                ;переходим к следующему байту
+        inc byte[lenBuffer]
+@@:
+        fld1                  ;загружаем 1
+        fcomp                 ;сравниваем
+        fstsw ax
+        sahf
+        jb .normalize         ;если меньше единицы
+
+        inc byte[wholeDigit]        ;увеличиваем целую часть
+        mov bl, byte[wholeDigit]    ;копируем вl
+        add byte[lenBuffer], bl     ;прибавляем длину целой части к общей длине
+        inc byte[lenBuffer]
+        mov bl, byte[fractionalDigit]     ;помещаем в bl длину вещественной части
+        add byte[lenBuffer], bl           ;прибавляем к общей длине
+        fidiv word[bp+2]                  ;делим на 10
+        fld1                              ;загружаем 1
+        fxch                              ;меняем местами
+        jmp .translate
+
+.normalize:                               ;если число не нормализовано
+        fld1
+        fxch
+.rep1:
+        fidiv word[bp+2]                  ;делим на 10
+        inc byte[lenBuffer]               ;увеличиваем длину
+        inc byte[wholeDigit]              ;увеличиваем длину целой части
+        fcom                              ;сравниваем с единицей
+        fstsw ax
+        sahf
+        jb @f                             ;если стало меньше 1
+        jmp .rep1                         ;если все еще больше 1
+@@:
+        mov bl, byte[fractionalDigit]     ;копируем вещественную часть
+        inc byte[lenBuffer]               ;разделительный знак
+        add byte[lenBuffer], bl
+
+.translate:                               ;помещаем в сх количество цифр
+        movzx cx, byte[wholeDigit]
+        add cl, byte[fractionalDigit]
+
+
+.rep2:                                    ;умножаем на 10
+        fimul word[bp+2]                  ;меняем местами
+        fxch                              ;копируем в вершину
+        fld st1                           ;отделяем вещественную часть
+        fprem                             ;копируем в вершину
+        fld st2                           ;меняем местами значение с дробной частью
+        fxch                              ;вычитаем дробную часть
+        fsubp st1, st0                    ;сохраняем целое значение
+        fistp word[bp]
+        fxch
+        mov ax, word[bp]                  ;копируем значение в ах
+
+        fild word[bp]                     ;значение в st0
+
+        fsubp st1, st0                    ;вычитаем и выталкиваем, остается дробная часть
+
+        add al, '0'                       ;перевод из аски
+        mov byte[si], al                  ;записываем байт
+        inc si                            ;переходим к следующему
+        dec byte[wholeDigit]              ;уменьшаем длину вещественной части
+
+        cmp  byte[wholeDigit], 0          ;сравнение с нулем
+
+        jne @f                            ;если не ноль
+        mov byte[si], ','                 ;если целая часть 0, выводим разделительный знак
+        inc si                            ;следующий байт
+@@:
+        loop .rep2                        ;выполняем сх раз
+
+        pop ax
+        pop ax
+        popa
+        ret
+
+
+outputBothVal:                             ;вывод значений Х и У(если существует функция)
+        ;вывод значения Х
+        mov si, buffer                     ;помещаем адрес конвертации
+        mov eax, xStart                    ;помещаем адрес числа
+        mov byte[fractionalDigit], 4       ;после запятой выводим 4 знака
+        call numToStr                      ;переводим число в строку
+        foutputStr buffer, lenBuffer, handle         ;вывод в файл
+        clearVar lenBuffer, wholeDigit, fractionalDigit      ;очищаем переменные
+        clearBuffer buffer, 22                  ;очищаем строку
+        ;вывод разделительного пробела
+        mov al, 4
+        mov byte[lenBuffer], al
+        foutputStr spacebar, lenBuffer, handle
+        clearVar  lenBuffer
+
+        ;вывод значения У
+        mov si, buffer                       ;помещаем адрес конвертации
+        mov eax, result                      ;помещаем адрес значения
+        mov byte[fractionalDigit], 4         ;после запятой выводим 4 знака
+        call numToStr                        ;переводим число в строку
+        foutputStr buffer, lenBuffer, handle     ;вывод в файл
+        clearVar lenBuffer, wholeDigit, fractionalDigit      ;очистка переменных
+        clearBuffer buffer, 22                                  ;очистка строки
+        ;перевод строки для вывода следующей пары значений
+        mov al, 1
+        mov byte[lenBuffer], al
+        foutputStr endline, lenBuffer, handle
+        clearVar lenBuffer
+        ret
+
+outputBreak:                            ;вывод значения Х и сообщения
+                                                    ;о том, что функция не существует
+        ;вывод значения Х
+        mov si, buffer
+        mov eax, xStart
+        mov byte[fractionalDigit], 4
+        call numToStr
+        foutputStr buffer, lenBuffer, handle
+        clearVar lenBuffer, wholeDigit, fractionalDigit
+        clearBuffer buffer, 22
+        ;вывод пробела между значениями
+        mov al, 4
+        mov byte[lenBuffer], al
+        foutputStr spacebar, lenBuffer, handle
+        clearVar  lenBuffer
+
+        ;вывод сообщения о том, что функция не существует
+        mov al, 27
+        mov byte[lenBuffer], al
+        foutputStr breakStr, lenBuffer, handle
+        clearVar  lenBuffer
+        clearBuffer buffer, 1
+        ;перевод строки
+        mov al, 1
+        mov byte[lenBuffer], al
+        foutputStr endline, lenBuffer, handle
+        clearVar lenBuffer
+        ret
