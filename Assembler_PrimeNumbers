@@ -1,0 +1,165 @@
+macro clearRegistr [arg]    ;макрос очищения регистров
+{
+        xor arg, arg
+}
+
+macro nextNumber            ;макрос перехода на следующее число
+{
+        inc [startx]             ;переходим к следующему числу
+        mov ax, [startx]         ;значение помещаем в ах
+        mov cx, ax          ;в счетчик помещаем число
+        sub cx, 2           ;отнимаем от счетчика 2 (1 и само число не учитываем)
+        mov bl, 2           ;начинаем проверять на простое число с
+                            ;делителя равного 2
+        jmp check           ;переход на метку проверки числа на простое
+}
+
+macro endProg               ;макрос завершения программы
+{
+        mov ax, 4c00h       ;функция завершения программы
+        int 21h             ;прерывание
+}
+
+macro scanStr [str]                 ;макрос считывания начального числа
+{
+        mov ah, 0ah            ;функция считывания с консоли
+        mov byte[str], 20     ;максимальная длина считываемой строки - 20
+        mov byte[str+1], 0    ;обнуляем второй байт
+        mov dx, buff           ;сохраняем адрес
+        int 21h                ;прерывание
+        mov si, dx             ;копируем адрес
+        add si, 2              ;с 3 байта записана строка
+}
+
+
+format mz
+org 100h
+
+mov dx, msg_ent                 ;выводим сообщение
+mov ah, 09h
+int 21h
+
+scanStr buff                ;считываем количество цифр
+call strToNum
+mov [maxNum], dx
+
+mov [buff], 0               ;обнуляем буфер
+
+call printEnter
+mov dx, msg                 ;выводим сообщение
+mov ah, 09h
+int 21h
+
+scanStr buff                ;считываем стартовое число
+call strToNum
+mov [startx], dx
+clearRegistr si
+
+cmp dx, 1              ;сравниваем с 1
+je printOne            ;если равно, отдельно выводим 1 и 2 как простые числа
+cmp dx, 2              ;сравниваем с 2
+je printTwo            ;если равно, отдельно 2 как простое число
+
+call printEnter                ;переводим строку
+clearRegistr ax, si            ;очищаем регистры
+mov ax, [startx]                    ;помещаем в ах начальное число
+mov bl, 2                      ;записываем начальный делитель
+mov cx, ax                     ;устанавливаем значение счетчика (ах - 2)
+sub cx, 2
+jmp check                      ;переходим к проверке
+
+
+strToNum:                      ;переводим считанную строку в число
+        clearRegistr dx, cx    ;очищаем регистры при помощи макроса
+        mov ah,0               ;обнуляем аh
+@lp1:                          ;цикл перевода строки в число
+        lodsb                  ;считываем один символ из строки
+        test al,al             ;сравниваем символ с нулем
+        jz @ex                 ;если ноль, то выходим из цикла
+        sub al,'0'             ;переводим из ASCII
+        cmp al, 9              ;сравниваем с 9
+        ja @lp1                ;если больше, значит это не число, пропускаем его
+        imul dx,10             ;умножаем уже записанное число (если есть) на 10
+        add dx, ax             ;прибавляем новое
+        jmp @lp1               ;повторяем выполнение метки
+
+@ex:                           ;выход из цикла
+        ret            ;помещаем в переменную веденное число
+
+printOne:                      ;выводим 1 как простое число отдельно
+        call printEnter
+        clearRegistr dx, ax
+        cmp si, [maxNum]
+        je exit
+        mov ah, 02h
+        mov dx, [startx]
+        add dx, '0'
+        int 21h
+        inc si
+        inc [startx]
+        jmp printTwo
+
+printTwo:                     ;выводим 2 как простое число отдельно
+        call printEnter
+        clearRegistr dx, ax
+        cmp si, [maxNum]
+        je exit
+        mov ah, 02h
+        mov dx, [startx]
+        add dx, '0'
+        int 21h
+        call printEnter
+        inc si
+        nextNumber         ;переходим к макросу перехода на следующее число
+
+check:                     ;метка проверки числа на простое
+        clearRegistr dx    ;очищаем регистр
+        div bx             ;делим число на делитель
+        mov ax, [startx]        ;копируем число в ах
+        cmp dx, 00h        ;сравниваем остаток с 0
+        je nextStep        ;если остаток ноль, то число не простое,
+                           ;переходим к следующему числу
+        inc bx             ;иначе переходим к следующему делителю
+        clearRegistr dx    ;очищаем регистр
+        loop check         ;повторяем сх раз
+        call ToNum         ;вызываем вывод, если число прошло проверку
+
+nextStep:                  ;метка перехода к следующему числу
+        nextNumber
+
+ToNum:                     ;переводим число в 10 систему для вывода
+        clearRegistr dx    ;очищаем регистр
+        mov bx, 10         ;основание сс 10
+        div bx             ;делим на 10 ах
+        push dx            ;сохраняем остаток в стек
+        inc cx             ;увеличиваем счетчик
+        test ax, ax        ;сравниваем целую часть от деления с 0
+        jnz ToNum          ;если не ноль, то повторяем выполнение метки
+        mov ah, 02h        ;иначе записываем функцию вывода
+
+print:                     ;метка печати
+        clearRegistr dx    ;очищаем регистра
+        pop dx             ;достаем цифру из стека
+        add dl, '0'        ;переводим из ASCII
+        int 21h            ;прерывание
+        loop print         ;повторяем сх раз
+        call printEnter    ;переводим строку
+
+inc si                     ;увеличиваем счетчик выведенных чисел
+cmp si, [maxNum]           ;сравниваем количество выведенных чисел с нужным
+jb nextStep                ;если меньше, продолжаем проверять числа
+exit: endProg              ;иначе закончиваем выполнение программы
+
+printEnter:                ;метка вывода перевода строки
+        mov dx, endline
+        mov ah, 09h
+        int 21h
+ret
+
+;переменные
+msg: db 'Enter the start number: ', '$'
+msg_ent: db 'Enter the number of digits: ', '$'
+buff db 22
+startx rw 20
+maxNum rw 20
+endline: db 10, 13, '$'
